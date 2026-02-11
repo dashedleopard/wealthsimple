@@ -1,0 +1,133 @@
+datasource db {
+  provider = "postgresql"
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model Account {
+  id              String            @id // WS account ID
+  type            String            // TFSA, RRSP, FHSA, NON_REG, USD
+  nickname        String?
+  currency        String            @default("CAD")
+  status          String            @default("open")
+  netliquidation  Decimal           @db.Decimal(14, 2)
+  buyingPower     Decimal           @default(0) @db.Decimal(14, 2)
+  totalDeposits   Decimal           @default(0) @db.Decimal(14, 2)
+  totalWithdrawals Decimal          @default(0) @db.Decimal(14, 2)
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  positions       Position[]
+  snapshots       AccountSnapshot[]
+  activities      Activity[]
+  dividends       Dividend[]
+
+  @@map("accounts")
+}
+
+model Position {
+  id              String   @id @default(cuid())
+  accountId       String
+  account         Account  @relation(fields: [accountId], references: [id])
+  securityId      String?
+  security        Security? @relation(fields: [securityId], references: [id])
+  symbol          String
+  name            String
+  quantity        Decimal  @db.Decimal(14, 6)
+  bookValue       Decimal  @db.Decimal(14, 2)
+  marketValue     Decimal  @db.Decimal(14, 2)
+  gainLoss        Decimal  @db.Decimal(14, 2)
+  gainLossPct     Decimal  @db.Decimal(8, 4)
+  currency        String   @default("CAD")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([accountId, symbol])
+  @@map("positions")
+}
+
+model AccountSnapshot {
+  id              String   @id @default(cuid())
+  accountId       String
+  account         Account  @relation(fields: [accountId], references: [id])
+  date            DateTime @db.Date
+  netliquidation  Decimal  @db.Decimal(14, 2)
+  deposits        Decimal  @default(0) @db.Decimal(14, 2)
+  withdrawals     Decimal  @default(0) @db.Decimal(14, 2)
+  earnings        Decimal  @default(0) @db.Decimal(14, 2)
+  createdAt       DateTime @default(now())
+
+  @@unique([accountId, date])
+  @@map("account_snapshots")
+}
+
+model Activity {
+  id              String   @id // WS activity ID
+  accountId       String
+  account         Account  @relation(fields: [accountId], references: [id])
+  type            String   // buy, sell, dividend, deposit, withdrawal, fee, etc.
+  symbol          String?
+  description     String?
+  quantity        Decimal? @db.Decimal(14, 6)
+  price           Decimal? @db.Decimal(14, 4)
+  amount          Decimal  @db.Decimal(14, 2)
+  currency        String   @default("CAD")
+  occurredAt      DateTime
+  createdAt       DateTime @default(now())
+
+  @@index([accountId])
+  @@index([type])
+  @@index([occurredAt])
+  @@map("activities")
+}
+
+model Dividend {
+  id              String   @id @default(cuid())
+  accountId       String
+  account         Account  @relation(fields: [accountId], references: [id])
+  symbol          String
+  amount          Decimal  @db.Decimal(14, 4)
+  currency        String   @default("CAD")
+  paymentDate     DateTime @db.Date
+  frequency       String?  // monthly, quarterly, semi-annual, annual
+  createdAt       DateTime @default(now())
+
+  @@unique([accountId, symbol, paymentDate])
+  @@index([paymentDate])
+  @@map("dividends")
+}
+
+model Security {
+  id              String     @id // WS security ID or custom
+  symbol          String     @unique
+  name            String
+  type            String?    // etf, stock, mutual_fund
+  exchange        String?
+  currency        String     @default("CAD")
+  dividendYield   Decimal?   @db.Decimal(8, 4)
+  mer             Decimal?   @db.Decimal(6, 4)
+  peRatio         Decimal?   @db.Decimal(10, 2)
+  marketCap       Decimal?   @db.Decimal(18, 2)
+  updatedAt       DateTime   @updatedAt
+  createdAt       DateTime   @default(now())
+  positions       Position[]
+
+  @@map("securities")
+}
+
+model SyncLog {
+  id              String   @id @default(cuid())
+  startedAt       DateTime @default(now())
+  completedAt     DateTime?
+  status          String   @default("running") // running, success, error
+  accountsCount   Int      @default(0)
+  positionsCount  Int      @default(0)
+  activitiesCount Int      @default(0)
+  snapshotsCount  Int      @default(0)
+  dividendsCount  Int      @default(0)
+  error           String?
+  createdAt       DateTime @default(now())
+
+  @@map("sync_logs")
+}
