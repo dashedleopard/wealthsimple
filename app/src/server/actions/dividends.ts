@@ -1,5 +1,3 @@
-"use server";
-
 import { prisma } from "@/lib/prisma";
 import { toNumber } from "@/lib/formatters";
 import type { MonthlyDividend } from "@/types";

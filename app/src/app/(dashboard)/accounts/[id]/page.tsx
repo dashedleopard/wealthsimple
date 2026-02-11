@@ -42,11 +42,11 @@ export default async function AccountDetailPage({
   const netContributions = deposits - withdrawals;
   const gainLossPct = netContributions > 0 ? (gainLoss / netContributions) * 100 : 0;
 
-  const snapshotData = account.snapshots.map((s: { date: Date; netliquidation: unknown; deposits: unknown; earnings: unknown }) => ({
+  const snapshotData = account.snapshots.map((s) => ({
     date: s.date.toISOString().split("T")[0],
-    value: toNumber(s.netliquidation as number),
-    deposits: toNumber(s.deposits as number),
-    earnings: toNumber(s.earnings as number),
+    value: toNumber(s.netliquidation),
+    deposits: toNumber(s.deposits),
+    earnings: toNumber(s.earnings),
   }));
 
   return (
