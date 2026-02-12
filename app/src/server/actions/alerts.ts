@@ -12,6 +12,8 @@ import {
   checkTLHWindow,
   checkConcentration,
   checkMarketMove,
+  checkGoalMilestone,
+  checkRebalanceDrift,
   type AlertRule,
 } from "@/lib/alert-rules";
 import type { AlertData } from "@/types";
@@ -44,6 +46,28 @@ export async function generateAlerts() {
 
     // Check market moves
     allRules.push(...checkMarketMove(positions));
+
+    // Check goal milestones
+    const goals = await prisma.financialGoal.findMany();
+    if (goals.length > 0) {
+      const goalData = goals.map((g) => ({
+        id: g.id,
+        name: g.name,
+        currentAmount: Number(g.currentAmount),
+        targetAmount: Number(g.targetAmount),
+      }));
+      allRules.push(...checkGoalMilestone(goalData));
+    }
+
+    // Check rebalance drift
+    const targets = await prisma.targetAllocation.findMany();
+    if (targets.length > 0) {
+      const { getRebalanceRecommendation } = await import("./rebalancing");
+      const rec = await getRebalanceRecommendation();
+      if (rec) {
+        allRules.push(...checkRebalanceDrift(rec.driftSummary));
+      }
+    }
   } catch (e) {
     console.error("Alert rule check failed:", e);
   }

@@ -132,6 +132,44 @@ export async function buildPortfolioContext(): Promise<string> {
     // Alerts not critical for context
   }
 
+  // Goals
+  try {
+    const { getGoals } = await import("./goals");
+    const goals = await getGoals();
+    if (goals.length > 0) {
+      lines.push("## Financial Goals");
+      for (const g of goals) {
+        const pct = Number(g.targetAmount) > 0
+          ? ((Number(g.currentAmount) / Number(g.targetAmount)) * 100).toFixed(0)
+          : "0";
+        lines.push(
+          `- ${g.name} (${g.category}): ${formatCurrency(Number(g.currentAmount))} / ${formatCurrency(Number(g.targetAmount))} (${pct}%)`
+        );
+      }
+      lines.push("");
+    }
+  } catch {
+    // Goals not critical for context
+  }
+
+  // Rebalance drift
+  try {
+    const { getRebalanceRecommendation } = await import("./rebalancing");
+    const rec = await getRebalanceRecommendation();
+    if (rec && rec.driftSummary.some((d) => d.status === "needs_rebalance")) {
+      lines.push("## Rebalance Drift");
+      for (const d of rec.driftSummary) {
+        const flag = d.status === "needs_rebalance" ? " [REBALANCE NEEDED]" : "";
+        lines.push(
+          `- ${d.assetClass}: target ${d.targetPct.toFixed(1)}%, current ${d.currentPct.toFixed(1)}%, drift ${d.driftPct > 0 ? "+" : ""}${d.driftPct.toFixed(1)}%${flag}`
+        );
+      }
+      lines.push("");
+    }
+  } catch {
+    // Rebalance not critical for context
+  }
+
   // Corporate detail with CDA/RDTOH/AAII and extraction reference
   if (hasCorporate) {
     const [taxSettings, cda, rdtoh, passiveIncome, corpSummary] = await Promise.all([

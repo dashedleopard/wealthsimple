@@ -122,6 +122,74 @@ export function checkMarketMove(
     .slice(0, 3);
 }
 
+/**
+ * Check for goal milestones (25%, 50%, 75%, 100%).
+ */
+export function checkGoalMilestone(
+  goals: { id: string; name: string; currentAmount: number; targetAmount: number }[]
+): AlertRule[] {
+  const alerts: AlertRule[] = [];
+  const milestones = [100, 75, 50, 25];
+
+  for (const goal of goals) {
+    if (goal.targetAmount <= 0) continue;
+    const pct = (goal.currentAmount / goal.targetAmount) * 100;
+
+    for (const milestone of milestones) {
+      // Alert when within 2% of a milestone
+      if (pct >= milestone - 2 && pct <= milestone + 2) {
+        alerts.push({
+          type: "goal_milestone",
+          severity: milestone === 100 ? "info" : "info",
+          title: `${goal.name}: ${milestone}% milestone`,
+          description: `Your "${goal.name}" goal is ${pct.toFixed(0)}% complete (${formatCAD(goal.currentAmount)} of ${formatCAD(goal.targetAmount)}).`,
+          actionUrl: "/goals",
+          data: { goalId: goal.id, milestone, progressPct: pct },
+        });
+        break; // Only one milestone alert per goal
+      }
+    }
+  }
+
+  return alerts;
+}
+
+/**
+ * Check for rebalance drift exceeding target bands.
+ */
+export function checkRebalanceDrift(
+  driftSummary: {
+    assetClass: string;
+    targetPct: number;
+    currentPct: number;
+    driftPct: number;
+    status: "within_band" | "needs_rebalance";
+  }[]
+): AlertRule[] {
+  const alerts: AlertRule[] = [];
+
+  const needsRebalance = driftSummary.filter(
+    (d) => d.status === "needs_rebalance"
+  );
+
+  if (needsRebalance.length > 0) {
+    const driftDetails = needsRebalance
+      .map((d) => `${d.assetClass}: ${d.driftPct > 0 ? "+" : ""}${d.driftPct.toFixed(1)}%`)
+      .join(", ");
+
+    alerts.push({
+      type: "rebalance_drift",
+      severity: "warning",
+      title: `${needsRebalance.length} asset class(es) outside bands`,
+      description: `Portfolio drift detected: ${driftDetails}. Consider rebalancing.`,
+      actionUrl: "/rebalance",
+      data: { driftCount: needsRebalance.length, classes: needsRebalance.map((d) => d.assetClass) },
+    });
+  }
+
+  return alerts;
+}
+
 function formatCAD(value: number): string {
   return new Intl.NumberFormat("en-CA", {
     style: "currency",

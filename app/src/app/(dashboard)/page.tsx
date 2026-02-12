@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Wallet, TrendingUp, DollarSign, BarChart3 } from "lucide-react";
+import { Wallet, TrendingUp, DollarSign, BarChart3, Target } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { KpiCard } from "@/components/cards/kpi-card";
 import { AccountCard } from "@/components/cards/account-card";
@@ -13,6 +13,7 @@ import { getRecentActivities } from "@/server/actions/activities";
 import { getDividendSummary } from "@/server/actions/dividends";
 import { getAllocationBySector } from "@/server/actions/allocation";
 import { getMergedPositionsWithQuotes } from "@/server/actions/positions";
+import { getGoals } from "@/server/actions/goals";
 import {
   formatCurrency,
   formatCompactCurrency,
@@ -21,7 +22,14 @@ import {
 
 export const dynamic = "force-dynamic";
 
-export default async function DashboardPage() {
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ view?: string }>;
+}) {
+  const sp = await searchParams;
+  const filter = (sp.view as "all" | "personal" | "corporate") || undefined;
+
   const [
     summary,
     accounts,
@@ -30,14 +38,16 @@ export default async function DashboardPage() {
     dividendSummary,
     sectorAllocation,
     topPositions,
+    goals,
   ] = await Promise.all([
-    getPortfolioSummary(),
-    getAccounts(),
-    getPortfolioSnapshots("1Y"),
+    getPortfolioSummary(filter),
+    getAccounts(false, filter),
+    getPortfolioSnapshots("1Y", filter),
     getRecentActivities(8),
-    getDividendSummary(),
-    getAllocationBySector(),
-    getMergedPositionsWithQuotes(),
+    getDividendSummary(filter),
+    getAllocationBySector(filter),
+    getMergedPositionsWithQuotes(filter),
+    getGoals(),
   ]);
 
   // Top movers — sorted by absolute gain/loss percentage
@@ -92,6 +102,54 @@ export default async function DashboardPage() {
         </div>
         <AllocationChart accounts={accounts} />
       </div>
+
+      {/* Goal Progress */}
+      {goals.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center justify-between">
+              <span className="flex items-center gap-2">
+                <Target className="h-5 w-5" />
+                Goal Progress
+              </span>
+              <Link
+                href="/goals"
+                className="text-sm font-normal text-primary hover:underline"
+              >
+                View All &rarr;
+              </Link>
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {goals.slice(0, 3).map((goal) => {
+                const target = Number(goal.targetAmount);
+                const current = Number(goal.currentAmount);
+                const pct = target > 0 ? Math.min(100, (current / target) * 100) : 0;
+                return (
+                  <div key={goal.id}>
+                    <div className="mb-1 flex justify-between text-sm">
+                      <span className="font-medium">{goal.name}</span>
+                      <span className="text-muted-foreground">
+                        {pct.toFixed(0)}%
+                      </span>
+                    </div>
+                    <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+                      <div
+                        className="h-full rounded-full bg-primary transition-all"
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      {formatCompactCurrency(current)} / {formatCompactCurrency(target)}
+                    </p>
+                  </div>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Sector Donut + Top Movers */}
       <div className="grid gap-6 lg:grid-cols-2">
@@ -162,13 +220,15 @@ export default async function DashboardPage() {
         </Card>
       </div>
 
-      {/* Accounts Grid */}
+      {/* Accounts Grid — hide zero-balance accounts */}
       <div>
         <h2 className="mb-4 text-xl font-semibold">Accounts</h2>
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {accounts.map((account) => (
-            <AccountCard key={account.id} account={account} />
-          ))}
+          {accounts
+            .filter((a) => Number(a.netliquidation) > 0)
+            .map((account) => (
+              <AccountCard key={account.id} account={account} />
+            ))}
         </div>
         {accounts.length === 0 && (
           <p className="py-8 text-center text-muted-foreground">
