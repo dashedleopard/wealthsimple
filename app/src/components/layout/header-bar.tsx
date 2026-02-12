@@ -3,6 +3,7 @@
 import { Suspense } from "react";
 import { AccountFilterToggle } from "./account-filter-toggle";
 import { CurrencyToggle } from "./currency-toggle";
+import { NotificationBell } from "./notification-bell";
 
 export function HeaderBar() {
   return (
@@ -15,6 +16,7 @@ export function HeaderBar() {
         <Suspense>
           <AccountFilterToggle />
         </Suspense>
+        <NotificationBell />
       </div>
     </div>
   );

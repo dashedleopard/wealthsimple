@@ -8,6 +8,7 @@ import { computeACB } from "@/lib/acb-engine";
 import { toNumber } from "@/lib/formatters";
 import { syncReturnRates, syncPerformanceData } from "./snaptrade-performance";
 import { backfillHistoricalSnapshots } from "./backfill";
+import { generateAlerts } from "./alerts";
 
 const SNAPTRADE_USER_ID = "wealthview-default-user";
 
@@ -470,6 +471,13 @@ export async function syncFromSnaptrade() {
       }
     } catch (e) {
       console.error("Performance data sync failed (non-fatal):", e);
+    }
+
+    // 7. Generate alerts based on current portfolio state
+    try {
+      await generateAlerts();
+    } catch (e) {
+      console.error("Alert generation failed (non-fatal):", e);
     }
 
     revalidatePath("/");
