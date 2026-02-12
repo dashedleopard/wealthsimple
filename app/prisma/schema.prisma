@@ -116,6 +116,16 @@ model Security {
   @@map("securities")
 }
 
+model SnaptradeUser {
+  id              String   @id @default("default")
+  snaptradeUserId String
+  userSecret      String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@map("snaptrade_users")
+}
+
 model SyncLog {
   id              String   @id @default(cuid())
   startedAt       DateTime @default(now())

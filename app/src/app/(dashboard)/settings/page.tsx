@@ -9,9 +9,12 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { getLatestSync, getSyncHistory } from "@/server/actions/sync";
+import { getSnaptradeConnections } from "@/server/actions/snaptrade";
 import { formatDate } from "@/lib/formatters";
+import { ConnectButton, SyncButton } from "@/components/snaptrade-connect";
+import { CheckCircle2, Link2 } from "lucide-react";
 
-export const dynamic = 'force-dynamic';
+export const dynamic = "force-dynamic";
 
 function SyncStatusBadge({ status }: { status: string }) {
   switch (status) {
@@ -26,22 +29,85 @@ function SyncStatusBadge({ status }: { status: string }) {
   }
 }
 
-export default async function SettingsPage() {
-  const [latestSync, syncHistory] = await Promise.all([
+export default async function SettingsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ connected?: string }>;
+}) {
+  const sp = await searchParams;
+  const justConnected = sp.connected === "true";
+
+  const [latestSync, syncHistory, connections] = await Promise.all([
     getLatestSync(),
     getSyncHistory(20),
+    getSnaptradeConnections(),
   ]);
+
+  const isConnected = connections.length > 0;
 
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold">Settings</h1>
-        <p className="text-muted-foreground">Sync status and configuration</p>
+        <p className="text-muted-foreground">
+          Connect and sync your Wealthsimple data
+        </p>
       </div>
 
+      {justConnected && (
+        <div className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 p-4 dark:border-emerald-900 dark:bg-emerald-950">
+          <CheckCircle2 className="h-5 w-5 text-emerald-600" />
+          <div>
+            <p className="font-medium text-emerald-800 dark:text-emerald-200">
+              Wealthsimple connected successfully!
+            </p>
+            <p className="text-sm text-emerald-700 dark:text-emerald-300">
+              Click &quot;Sync Now&quot; below to pull your data.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Connection Status */}
       <Card>
         <CardHeader>
-          <CardTitle>Sync Status</CardTitle>
+          <CardTitle className="flex items-center gap-2">
+            <Link2 className="h-5 w-5" />
+            Wealthsimple Connection
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {isConnected ? (
+            <div className="space-y-4">
+              <div className="flex items-center gap-3">
+                <Badge className="bg-emerald-600">Connected</Badge>
+                <span className="text-sm text-muted-foreground">
+                  {connections.length} brokerage connection{connections.length !== 1 ? "s" : ""}
+                </span>
+              </div>
+              <SyncButton />
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <p className="text-muted-foreground">
+                Connect your Wealthsimple account to sync your portfolio data.
+                You&apos;ll be redirected to Snaptrade&apos;s secure portal to
+                log in with your Wealthsimple credentials.
+              </p>
+              <ConnectButton />
+              <p className="text-xs text-muted-foreground">
+                Your credentials are handled securely by Snaptrade. This app
+                never sees your Wealthsimple password.
+              </p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Sync Status */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Last Sync</CardTitle>
         </CardHeader>
         <CardContent>
           {latestSync ? (
@@ -49,7 +115,7 @@ export default async function SettingsPage() {
               <div className="flex items-center gap-3">
                 <SyncStatusBadge status={latestSync.status} />
                 <span className="text-sm text-muted-foreground">
-                  Last sync: {formatDate(latestSync.startedAt)}
+                  {formatDate(latestSync.startedAt)}
                   {latestSync.completedAt &&
                     ` — completed ${formatDate(latestSync.completedAt)}`}
                 </span>
@@ -98,52 +164,20 @@ export default async function SettingsPage() {
               )}
             </div>
           ) : (
-            <div className="py-8 text-center text-muted-foreground">
-              <p>No sync has been run yet.</p>
-              <p className="mt-2 text-sm">
-                Run <code className="rounded bg-muted px-2 py-1">python sync/fetch.py</code> to sync your Wealthsimple data.
-              </p>
-            </div>
+            <p className="py-4 text-center text-muted-foreground">
+              No sync has been run yet. Connect your account and click Sync Now.
+            </p>
           )}
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>How to Sync</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3 text-sm">
-          <p>
-            The sync script runs locally on your machine and fetches data from
-            Wealthsimple, then writes it to the shared database.
-          </p>
-          <div className="rounded-lg bg-muted p-4 font-mono text-xs">
-            <p># Navigate to the sync directory</p>
-            <p>cd sync/</p>
-            <p className="mt-2"># Create a virtual environment (first time only)</p>
-            <p>python3 -m venv venv</p>
-            <p>source venv/bin/activate</p>
-            <p>pip install -r requirements.txt</p>
-            <p className="mt-2"># Copy .env.example to .env and fill in credentials</p>
-            <p>cp .env.example .env</p>
-            <p className="mt-2"># Run the sync</p>
-            <p>python fetch.py</p>
-            <p className="mt-2"># Or with TOTP code</p>
-            <p>python fetch.py --totp 123456</p>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Sync History</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {syncHistory.length === 0 ? (
-            <p className="py-8 text-center text-muted-foreground">
-              No sync history.
-            </p>
-          ) : (
+      {/* Sync History */}
+      {syncHistory.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Sync History</CardTitle>
+          </CardHeader>
+          <CardContent>
             <Table>
               <TableHeader>
                 <TableRow>
@@ -152,7 +186,6 @@ export default async function SettingsPage() {
                   <TableHead className="text-right">Accounts</TableHead>
                   <TableHead className="text-right">Positions</TableHead>
                   <TableHead className="text-right">Activities</TableHead>
-                  <TableHead className="text-right">Snapshots</TableHead>
                   <TableHead className="text-right">Dividends</TableHead>
                   <TableHead>Error</TableHead>
                 </TableRow>
@@ -160,7 +193,7 @@ export default async function SettingsPage() {
               <TableBody>
                 {syncHistory.map((log) => (
                   <TableRow key={log.id}>
-                    <TableCell className="text-sm whitespace-nowrap">
+                    <TableCell className="whitespace-nowrap text-sm">
                       {formatDate(log.startedAt)}
                     </TableCell>
                     <TableCell>
@@ -176,9 +209,6 @@ export default async function SettingsPage() {
                       {log.activitiesCount}
                     </TableCell>
                     <TableCell className="text-right">
-                      {log.snapshotsCount}
-                    </TableCell>
-                    <TableCell className="text-right">
                       {log.dividendsCount}
                     </TableCell>
                     <TableCell className="max-w-[200px] truncate text-xs text-muted-foreground">
@@ -188,9 +218,9 @@ export default async function SettingsPage() {
                 ))}
               </TableBody>
             </Table>
-          )}
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
