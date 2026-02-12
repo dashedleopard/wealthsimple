@@ -8,27 +8,37 @@ import { getSnaptradeConnectUrl, syncFromSnaptrade } from "@/server/actions/snap
 export function ConnectButton() {
   const [loading, setLoading] = useState(false);
 
+  const [error, setError] = useState<string | null>(null);
+
   async function handleConnect() {
     setLoading(true);
-    try {
-      const url = await getSnaptradeConnectUrl();
-      window.location.href = url;
-    } catch (error) {
-      console.error("Failed to get connect URL:", error);
-      alert("Failed to connect. Check that SNAPTRADE_CLIENT_ID and SNAPTRADE_CONSUMER_KEY are set.");
+    setError(null);
+    const result = await getSnaptradeConnectUrl();
+    if (result.error) {
+      setError(result.error);
       setLoading(false);
+    } else if (result.url) {
+      window.location.href = result.url;
     }
   }
 
   return (
-    <Button onClick={handleConnect} disabled={loading} size="lg">
-      {loading ? (
-        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-      ) : (
-        <Link2 className="mr-2 h-4 w-4" />
+    <div className="space-y-3">
+      <Button onClick={handleConnect} disabled={loading} size="lg">
+        {loading ? (
+          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+        ) : (
+          <Link2 className="mr-2 h-4 w-4" />
+        )}
+        Connect Wealthsimple
+      </Button>
+      {error && (
+        <div className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-3 dark:border-red-900 dark:bg-red-950">
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-600" />
+          <p className="text-sm text-red-700 dark:text-red-300">{error}</p>
+        </div>
       )}
-      Connect Wealthsimple
-    </Button>
+    </div>
   );
 }
 

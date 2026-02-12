@@ -31,26 +31,36 @@ async function getOrCreateSnaptradeUser() {
   return user;
 }
 
-export async function getSnaptradeConnectUrl() {
-  const user = await getOrCreateSnaptradeUser();
+export async function getSnaptradeConnectUrl(): Promise<{ url?: string; error?: string }> {
+  try {
+    if (!process.env.SNAPTRADE_CLIENT_ID || !process.env.SNAPTRADE_CONSUMER_KEY) {
+      return { error: "SNAPTRADE_CLIENT_ID and SNAPTRADE_CONSUMER_KEY are not set on the server." };
+    }
 
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+    const user = await getOrCreateSnaptradeUser();
 
-  const { data } = await snaptrade.authentication.loginSnapTradeUser({
-    userId: user.snaptradeUserId,
-    userSecret: user.userSecret,
-    broker: "WEALTHSIMPLE",
-    customRedirect: `${appUrl}/settings?connected=true`,
-    connectionType: "read",
-  });
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
 
-  // SDK returns a union type; access the redirect URL safely
-  const response = data as Record<string, unknown>;
-  const redirectURI = response.redirectURI ?? response.loginRedirectURI ?? response.redirect_uri;
-  if (!redirectURI) {
-    throw new Error("Failed to get redirect URL from Snaptrade");
+    const { data } = await snaptrade.authentication.loginSnapTradeUser({
+      userId: user.snaptradeUserId,
+      userSecret: user.userSecret,
+      broker: "WEALTHSIMPLE",
+      customRedirect: `${appUrl}/settings?connected=true`,
+      connectionType: "read",
+    });
+
+    // SDK returns a union type; access the redirect URL safely
+    const response = data as Record<string, unknown>;
+    const redirectURI = response.redirectURI ?? response.loginRedirectURI ?? response.redirect_uri;
+    if (!redirectURI) {
+      return { error: `No redirect URL in Snaptrade response. Got keys: ${Object.keys(response).join(", ")}` };
+    }
+    return { url: String(redirectURI) };
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    console.error("Snaptrade connect error:", message);
+    return { error: message };
   }
-  return String(redirectURI);
 }
 
 export async function getSnaptradeConnections() {
