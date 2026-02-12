@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatCurrency, formatPercent, toNumber } from "@/lib/formatters";
@@ -26,7 +27,15 @@ export function AllocationChart({ accounts }: AllocationChartProps) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Account Allocation</CardTitle>
+        <CardTitle className="flex items-center justify-between">
+          <span>Account Allocation</span>
+          <Link
+            href="/allocation"
+            className="text-sm font-normal text-primary hover:underline"
+          >
+            View All &rarr;
+          </Link>
+        </CardTitle>
       </CardHeader>
       <CardContent>
         {data.length === 0 ? (

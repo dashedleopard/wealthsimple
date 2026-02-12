@@ -10,6 +10,8 @@ import {
   DollarSign,
   ArrowLeftRight,
   Settings,
+  ChartPie,
+  Receipt,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -17,8 +19,10 @@ const NAV_ITEMS = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
   { href: "/accounts", label: "Accounts", icon: Wallet },
   { href: "/holdings", label: "Holdings", icon: PieChart },
+  { href: "/allocation", label: "Allocation", icon: ChartPie },
   { href: "/performance", label: "Performance", icon: TrendingUp },
   { href: "/dividends", label: "Dividends", icon: DollarSign },
+  { href: "/tax", label: "Tax", icon: Receipt },
   { href: "/transactions", label: "Transactions", icon: ArrowLeftRight },
   { href: "/settings", label: "Settings", icon: Settings },
 ];

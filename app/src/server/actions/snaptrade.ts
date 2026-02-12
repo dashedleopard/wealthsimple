@@ -3,8 +3,35 @@
 import { prisma } from "@/lib/prisma";
 import { getSnaptradeClient } from "@/lib/snaptrade";
 import { revalidatePath } from "next/cache";
+import { enrichSecurities } from "./securities";
 
 const SNAPTRADE_USER_ID = "wealthview-default-user";
+
+async function registerFreshSnaptradeUser() {
+  // Delete stale DB record
+  await prisma.snaptradeUser.deleteMany({ where: { id: "default" } });
+
+  // Delete from Snaptrade too (ignore errors if user doesn't exist)
+  try {
+    await getSnaptradeClient().authentication.deleteSnapTradeUser({
+      userId: SNAPTRADE_USER_ID,
+    });
+  } catch {
+    // User may not exist on Snaptrade — that's fine
+  }
+
+  const { data } = await getSnaptradeClient().authentication.registerSnapTradeUser({
+    userId: SNAPTRADE_USER_ID,
+  });
+
+  return prisma.snaptradeUser.create({
+    data: {
+      id: "default",
+      snaptradeUserId: data.userId!,
+      userSecret: data.userSecret!,
+    },
+  });
+}
 
 async function getOrCreateSnaptradeUser() {
   const existing = await prisma.snaptradeUser.findUnique({
@@ -15,56 +42,64 @@ async function getOrCreateSnaptradeUser() {
     return existing;
   }
 
-  // Register with Snaptrade
-  const { data } = await getSnaptradeClient().authentication.registerSnapTradeUser({
-    userId: SNAPTRADE_USER_ID,
+  return registerFreshSnaptradeUser();
+}
+
+async function loginSnaptradeUser(user: { snaptradeUserId: string; userSecret: string }) {
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+
+  const { data } = await getSnaptradeClient().authentication.loginSnapTradeUser({
+    userId: user.snaptradeUserId,
+    userSecret: user.userSecret,
+    broker: "WEALTHSIMPLETRADE",
+    customRedirect: `${appUrl}/settings?connected=true`,
+    connectionType: "read",
   });
 
-  const user = await prisma.snaptradeUser.create({
-    data: {
-      id: "default",
-      snaptradeUserId: data.userId!,
-      userSecret: data.userSecret!,
-    },
-  });
-
-  return user;
+  const response = data as Record<string, unknown>;
+  return response.redirectURI ?? response.loginRedirectURI ?? response.redirect_uri;
 }
 
 export async function getSnaptradeConnectUrl(): Promise<{ url?: string; error?: string }> {
   try {
-    const clientId = process.env.SNAPTRADE_CLIENT_ID;
-    const consumerKey = process.env.SNAPTRADE_CONSUMER_KEY;
+    const clientId = process.env.SNAPTRADE_CLIENT_ID?.trim();
+    const consumerKey = process.env.SNAPTRADE_CONSUMER_KEY?.trim();
 
     if (!clientId || !consumerKey) {
-      return {
-        error: `Env vars missing. CLIENT_ID: ${clientId ? "set (" + clientId.slice(0, 5) + "...)" : "MISSING"}, CONSUMER_KEY: ${consumerKey ? "set (" + consumerKey.slice(0, 5) + "...)" : "MISSING"}`,
-      };
+      return { error: "Snaptrade credentials not configured." };
     }
 
-    const user = await getOrCreateSnaptradeUser();
+    let user = await getOrCreateSnaptradeUser();
 
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+    let redirectURI: unknown;
+    try {
+      redirectURI = await loginSnaptradeUser(user);
+    } catch (loginErr) {
+      const msg = String(loginErr);
+      // If 404 or 401 — stale user. Re-register and retry once.
+      if (msg.includes("404") || msg.includes("401")) {
+        console.log("Snaptrade user stale, re-registering...");
+        user = await registerFreshSnaptradeUser();
+        redirectURI = await loginSnaptradeUser(user);
+      } else {
+        throw loginErr;
+      }
+    }
 
-    const { data } = await getSnaptradeClient().authentication.loginSnapTradeUser({
-      userId: user.snaptradeUserId,
-      userSecret: user.userSecret,
-      broker: "WEALTHSIMPLE",
-      customRedirect: `${appUrl}/settings?connected=true`,
-      connectionType: "read",
-    });
-
-    // SDK returns a union type; access the redirect URL safely
-    const response = data as Record<string, unknown>;
-    const redirectURI = response.redirectURI ?? response.loginRedirectURI ?? response.redirect_uri;
     if (!redirectURI) {
-      return { error: `No redirect URL in Snaptrade response. Got keys: ${Object.keys(response).join(", ")}` };
+      return { error: "No redirect URL returned from Snaptrade." };
     }
     return { url: String(redirectURI) };
-  } catch (e) {
+  } catch (e: unknown) {
+    // Extract the full API error response if available (Axios-based SDK)
+    const axiosErr = e as { response?: { status?: number; data?: unknown } };
+    const body = axiosErr?.response?.data;
+    const status = axiosErr?.response?.status;
     const message = e instanceof Error ? e.message : String(e);
-    console.error("Snaptrade connect error:", message);
-    return { error: message };
+    const detail = body ? ` | API response: ${JSON.stringify(body)}` : "";
+
+    console.error("Snaptrade connect error:", message, detail);
+    return { error: `${message}${detail}` };
   }
 }
 
@@ -344,6 +379,13 @@ export async function syncFromSnaptrade() {
       },
     });
 
+    // Enrich securities with Yahoo Finance data (runs silently)
+    try {
+      await enrichSecurities();
+    } catch (e) {
+      console.error("Security enrichment failed (non-fatal):", e);
+    }
+
     revalidatePath("/");
     revalidatePath("/accounts");
     revalidatePath("/holdings");
@@ -351,6 +393,8 @@ export async function syncFromSnaptrade() {
     revalidatePath("/dividends");
     revalidatePath("/transactions");
     revalidatePath("/settings");
+    revalidatePath("/allocation");
+    revalidatePath("/tax");
 
     return {
       success: true,

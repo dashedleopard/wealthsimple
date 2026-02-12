@@ -12,7 +12,9 @@ import { getLatestSync, getSyncHistory } from "@/server/actions/sync";
 import { getSnaptradeConnections } from "@/server/actions/snaptrade";
 import { formatDate } from "@/lib/formatters";
 import { ConnectButton, SyncButton } from "@/components/snaptrade-connect";
-import { CheckCircle2, Link2 } from "lucide-react";
+import { RefreshQuotesButton } from "@/components/buttons/refresh-quotes-button";
+import { CheckCircle2, Link2, Database } from "lucide-react";
+import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
 
@@ -37,10 +39,12 @@ export default async function SettingsPage({
   const sp = await searchParams;
   const justConnected = sp.connected === "true";
 
-  const [latestSync, syncHistory, connections] = await Promise.all([
+  const [latestSync, syncHistory, connections, quoteCacheCount, enrichedSecurities] = await Promise.all([
     getLatestSync(),
     getSyncHistory(20),
     getSnaptradeConnections(),
+    prisma.quoteCache.count(),
+    prisma.security.count({ where: { sector: { not: null } } }),
   ]);
 
   const isConnected = connections.length > 0;
@@ -168,6 +172,39 @@ export default async function SettingsPage({
               No sync has been run yet. Connect your account and click Sync Now.
             </p>
           )}
+        </CardContent>
+      </Card>
+
+      {/* Quote Cache Status */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Database className="h-5 w-5" />
+            Yahoo Finance Quote Cache
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-4 sm:grid-cols-3">
+            <div className="rounded-lg border p-3">
+              <p className="text-xs text-muted-foreground">Cached Quotes</p>
+              <p className="text-xl font-bold">{quoteCacheCount}</p>
+            </div>
+            <div className="rounded-lg border p-3">
+              <p className="text-xs text-muted-foreground">
+                Enriched Securities
+              </p>
+              <p className="text-xl font-bold">{enrichedSecurities}</p>
+            </div>
+            <div className="rounded-lg border p-3">
+              <p className="text-xs text-muted-foreground">Cache TTL</p>
+              <p className="text-xl font-bold">15 min</p>
+            </div>
+          </div>
+          <RefreshQuotesButton />
+          <p className="text-xs text-muted-foreground">
+            Quotes are cached for 15 minutes. Enrichment (sector, industry,
+            country) runs automatically after each sync.
+          </p>
         </CardContent>
       </Card>
 

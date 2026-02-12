@@ -57,3 +57,124 @@ export interface PerformanceData {
 }
 
 export type DateRange = "1M" | "3M" | "6M" | "YTD" | "1Y" | "ALL";
+
+// Security enrichment types
+export interface SecurityDetail {
+  symbol: string;
+  name: string;
+  type?: string;
+  exchange?: string;
+  sector?: string;
+  industry?: string;
+  country?: string;
+  assetClass?: string;
+  currentPrice?: number;
+  fiftyTwoWeekHigh?: number;
+  fiftyTwoWeekLow?: number;
+  peRatio?: number;
+  mer?: number;
+  marketCap?: number;
+  dividendYield?: number;
+  priceUpdatedAt?: Date;
+}
+
+export interface HistoricalPrice {
+  date: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+}
+
+// Symbol detail page types
+export interface SymbolDetailData {
+  symbol: string;
+  security: SecurityDetail;
+  totalQuantity: number;
+  totalBookValue: number;
+  totalMarketValue: number;
+  averageEntryPrice: number;
+  currentPrice: number;
+  totalReturn: number; // includes dividends
+  totalReturnPct: number;
+  weight: number;
+  perAccountBreakdown: {
+    accountId: string;
+    accountName: string;
+    accountType: string;
+    quantity: number;
+    bookValue: number;
+    marketValue: number;
+    gainLoss: number;
+    weight: number;
+  }[];
+}
+
+export interface SymbolDividendData {
+  totalReceived: number;
+  projectedAnnual: number;
+  yieldOnCost: number;
+  paymentFrequency: string;
+  history: {
+    date: string;
+    amount: number;
+    accountType: string;
+  }[];
+}
+
+// Allocation types
+export interface AllocationSlice {
+  name: string;
+  marketValue: number;
+  percentage: number;
+  count: number;
+  color: string;
+}
+
+// Benchmark types
+export interface BenchmarkComparison {
+  date: string;
+  portfolioReturn: number;
+  spTsxReturn: number;
+  sp500Return: number;
+}
+
+// Tax types
+export interface RealizedGain {
+  symbol: string;
+  sellDate: string;
+  accountId: string;
+  accountType: string;
+  proceeds: number;
+  costBasis: number;
+  gainLoss: number;
+  isTaxable: boolean;
+}
+
+export interface UnrealizedGain {
+  symbol: string;
+  name: string;
+  accountId: string;
+  accountType: string;
+  bookValue: number;
+  marketValue: number;
+  unrealizedGainLoss: number;
+  daysHeld: number;
+}
+
+export interface TaxLossCandidate {
+  symbol: string;
+  name: string;
+  unrealizedLoss: number;
+  lossPct: number;
+  accounts: string[];
+  superficialLossRisk: boolean;
+}
+
+export interface CapitalGainsSummary {
+  realizedGains: number;
+  realizedLosses: number;
+  netCapitalGains: number;
+  taxableAmount: number; // 50% inclusion rate
+}

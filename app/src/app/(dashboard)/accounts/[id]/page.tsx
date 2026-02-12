@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -120,8 +121,12 @@ export default async function AccountDetailPage({
                 {account.positions.map((pos) => {
                   const gl = toNumber(pos.gainLoss);
                   return (
-                    <TableRow key={pos.id}>
-                      <TableCell className="font-medium">{pos.symbol}</TableCell>
+                    <TableRow key={pos.id} className="cursor-pointer hover:bg-muted/50">
+                      <TableCell className="font-medium">
+                        <Link href={`/holdings/${encodeURIComponent(pos.symbol)}`} className="text-primary hover:underline">
+                          {pos.symbol}
+                        </Link>
+                      </TableCell>
                       <TableCell className="max-w-[200px] truncate text-sm text-muted-foreground">
                         {pos.name}
                       </TableCell>

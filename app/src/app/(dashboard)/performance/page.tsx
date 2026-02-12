@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Table,
@@ -11,42 +12,71 @@ import { Badge } from "@/components/ui/badge";
 import { KpiCard } from "@/components/cards/kpi-card";
 import { ReturnChart } from "@/components/charts/return-chart";
 import { PortfolioChart } from "@/components/charts/portfolio-chart";
+import { BenchmarkChart } from "@/components/charts/benchmark-chart";
 import { getAccounts, getPortfolioSummary } from "@/server/actions/accounts";
 import { getPortfolioSnapshots } from "@/server/actions/snapshots";
+import { getPortfolioVsBenchmarks } from "@/server/actions/benchmarks";
 import { calculateCumulativeReturns } from "@/lib/calculations";
 import { formatCurrency, formatPercent, toNumber } from "@/lib/formatters";
 import { ACCOUNT_TYPE_LABELS } from "@/lib/constants";
 import { TrendingUp, DollarSign, ArrowDownToLine } from "lucide-react";
+import type { DateRange } from "@/types";
+import { cn } from "@/lib/utils";
 
-export const dynamic = 'force-dynamic';
+export const dynamic = "force-dynamic";
 
-export default async function PerformancePage() {
-  const [summary, accounts, snapshots] = await Promise.all([
+const DATE_RANGES: DateRange[] = ["1M", "3M", "6M", "YTD", "1Y", "ALL"];
+
+export default async function PerformancePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ range?: string }>;
+}) {
+  const sp = await searchParams;
+  const range = (DATE_RANGES.includes(sp.range as DateRange)
+    ? sp.range
+    : "1Y") as DateRange;
+
+  const [summary, accounts, snapshots, benchmarkData] = await Promise.all([
     getPortfolioSummary(),
     getAccounts(),
-    getPortfolioSnapshots("ALL"),
+    getPortfolioSnapshots(range),
+    getPortfolioVsBenchmarks(range),
   ]);
 
   const cumulativeReturns = calculateCumulativeReturns(snapshots);
+
+  // Calculate alpha (portfolio vs S&P/TSX)
+  const latestBenchmark =
+    benchmarkData.length > 0
+      ? benchmarkData[benchmarkData.length - 1]
+      : null;
+  const alpha = latestBenchmark
+    ? latestBenchmark.portfolioReturn - latestBenchmark.spTsxReturn
+    : 0;
 
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold">Performance</h1>
         <p className="text-muted-foreground">
-          Portfolio returns and performance analytics
+          Portfolio returns and benchmark comparison
         </p>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-4">
         <KpiCard
           title="Total Portfolio"
           value={formatCurrency(summary.totalValue)}
           icon={DollarSign}
         />
         <KpiCard
-          title="Total Return"
-          value={formatPercent(summary.totalGainLossPct)}
+          title="Portfolio Return"
+          value={
+            latestBenchmark
+              ? formatPercent(latestBenchmark.portfolioReturn)
+              : formatPercent(summary.totalGainLossPct)
+          }
           change={formatCurrency(summary.totalGainLoss)}
           changeType={summary.totalGainLoss >= 0 ? "positive" : "negative"}
           icon={TrendingUp}
@@ -56,7 +86,35 @@ export default async function PerformancePage() {
           value={formatCurrency(summary.totalDeposits)}
           icon={ArrowDownToLine}
         />
+        <KpiCard
+          title="Alpha vs S&P/TSX"
+          value={formatPercent(alpha)}
+          changeType={alpha >= 0 ? "positive" : "negative"}
+          change={alpha >= 0 ? "Outperforming" : "Underperforming"}
+          icon={TrendingUp}
+        />
       </div>
+
+      {/* Date Range Selector */}
+      <div className="flex gap-1 rounded-lg border p-1">
+        {DATE_RANGES.map((r) => (
+          <Link
+            key={r}
+            href={`/performance?range=${r}`}
+            className={cn(
+              "rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
+              range === r
+                ? "bg-primary text-primary-foreground"
+                : "text-muted-foreground hover:bg-muted hover:text-foreground"
+            )}
+          >
+            {r}
+          </Link>
+        ))}
+      </div>
+
+      {/* Benchmark Chart */}
+      <BenchmarkChart data={benchmarkData} />
 
       <ReturnChart data={cumulativeReturns} />
 
