@@ -1,19 +1,19 @@
 import { Snaptrade } from "snaptrade-typescript-sdk";
 
-const globalForSnaptrade = globalThis as unknown as {
-  snaptrade: Snaptrade | undefined;
-};
+let _client: Snaptrade | null = null;
 
-function createSnaptradeClient() {
-  return new Snaptrade({
-    consumerKey: process.env.SNAPTRADE_CONSUMER_KEY!,
-    clientId: process.env.SNAPTRADE_CLIENT_ID!,
-  });
-}
+export function getSnaptradeClient(): Snaptrade {
+  if (!_client) {
+    const clientId = process.env.SNAPTRADE_CLIENT_ID;
+    const consumerKey = process.env.SNAPTRADE_CONSUMER_KEY;
 
-export const snaptrade =
-  globalForSnaptrade.snaptrade ?? createSnaptradeClient();
+    if (!clientId || !consumerKey) {
+      throw new Error(
+        `Snaptrade credentials missing at client creation time. CLIENT_ID: ${clientId ? "set" : "MISSING"}, CONSUMER_KEY: ${consumerKey ? "set" : "MISSING"}`
+      );
+    }
 
-if (process.env.NODE_ENV !== "production") {
-  globalForSnaptrade.snaptrade = snaptrade;
+    _client = new Snaptrade({ consumerKey, clientId });
+  }
+  return _client;
 }

@@ -1,7 +1,7 @@
 "use server";
 
 import { prisma } from "@/lib/prisma";
-import { snaptrade } from "@/lib/snaptrade";
+import { getSnaptradeClient } from "@/lib/snaptrade";
 import { revalidatePath } from "next/cache";
 
 const SNAPTRADE_USER_ID = "wealthview-default-user";
@@ -16,7 +16,7 @@ async function getOrCreateSnaptradeUser() {
   }
 
   // Register with Snaptrade
-  const { data } = await snaptrade.authentication.registerSnapTradeUser({
+  const { data } = await getSnaptradeClient().authentication.registerSnapTradeUser({
     userId: SNAPTRADE_USER_ID,
   });
 
@@ -33,15 +33,20 @@ async function getOrCreateSnaptradeUser() {
 
 export async function getSnaptradeConnectUrl(): Promise<{ url?: string; error?: string }> {
   try {
-    if (!process.env.SNAPTRADE_CLIENT_ID || !process.env.SNAPTRADE_CONSUMER_KEY) {
-      return { error: "SNAPTRADE_CLIENT_ID and SNAPTRADE_CONSUMER_KEY are not set on the server." };
+    const clientId = process.env.SNAPTRADE_CLIENT_ID;
+    const consumerKey = process.env.SNAPTRADE_CONSUMER_KEY;
+
+    if (!clientId || !consumerKey) {
+      return {
+        error: `Env vars missing. CLIENT_ID: ${clientId ? "set (" + clientId.slice(0, 5) + "...)" : "MISSING"}, CONSUMER_KEY: ${consumerKey ? "set (" + consumerKey.slice(0, 5) + "...)" : "MISSING"}`,
+      };
     }
 
     const user = await getOrCreateSnaptradeUser();
 
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
 
-    const { data } = await snaptrade.authentication.loginSnapTradeUser({
+    const { data } = await getSnaptradeClient().authentication.loginSnapTradeUser({
       userId: user.snaptradeUserId,
       userSecret: user.userSecret,
       broker: "WEALTHSIMPLE",
@@ -71,7 +76,7 @@ export async function getSnaptradeConnections() {
   if (!user) return [];
 
   try {
-    const { data } = await snaptrade.connections.listBrokerageAuthorizations({
+    const { data } = await getSnaptradeClient().connections.listBrokerageAuthorizations({
       userId: user.snaptradeUserId,
       userSecret: user.userSecret,
     });
@@ -127,7 +132,7 @@ export async function syncFromSnaptrade() {
   try {
     // 1. Fetch accounts
     const { data: stAccounts } =
-      await snaptrade.accountInformation.listUserAccounts({
+      await getSnaptradeClient().accountInformation.listUserAccounts({
         userId: user.snaptradeUserId,
         userSecret: user.userSecret,
       });
@@ -164,7 +169,7 @@ export async function syncFromSnaptrade() {
       // 2. Fetch positions for this account
       try {
         const { data: holdings } =
-          await snaptrade.accountInformation.getUserAccountPositions({
+          await getSnaptradeClient().accountInformation.getUserAccountPositions({
             userId: user.snaptradeUserId,
             userSecret: user.userSecret,
             accountId,
@@ -228,7 +233,7 @@ export async function syncFromSnaptrade() {
       // 3. Fetch activities for this account
       try {
         const { data: activitiesResponse } =
-          await snaptrade.transactionsAndReporting.getActivities({
+          await getSnaptradeClient().transactionsAndReporting.getActivities({
             userId: user.snaptradeUserId,
             userSecret: user.userSecret,
             startDate: "2020-01-01",
