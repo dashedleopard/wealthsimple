@@ -12,6 +12,12 @@ import {
   Settings,
   ChartPie,
   Receipt,
+  MessageSquare,
+  Building2,
+  FlaskConical,
+  FileText,
+  Target,
+  Scale,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -23,7 +29,13 @@ const NAV_ITEMS = [
   { href: "/performance", label: "Performance", icon: TrendingUp },
   { href: "/dividends", label: "Dividends", icon: DollarSign },
   { href: "/tax", label: "Tax", icon: Receipt },
+  { href: "/corporate", label: "Corporate", icon: Building2 },
+  { href: "/scenarios", label: "Scenarios", icon: FlaskConical },
+  { href: "/tax-memo", label: "Tax Memo", icon: FileText },
+  { href: "/goals", label: "Goals", icon: Target },
+  { href: "/rebalance", label: "Rebalance", icon: Scale },
   { href: "/transactions", label: "Transactions", icon: ArrowLeftRight },
+  { href: "/chat", label: "Chat", icon: MessageSquare },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 
