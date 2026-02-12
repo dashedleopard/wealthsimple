@@ -13,8 +13,12 @@ import { getSnaptradeConnections } from "@/server/actions/snaptrade";
 import { formatDate } from "@/lib/formatters";
 import { ConnectButton, SyncButton } from "@/components/snaptrade-connect";
 import { RefreshQuotesButton } from "@/components/buttons/refresh-quotes-button";
-import { CheckCircle2, Link2, Database } from "lucide-react";
+import { RefreshSecurityDataButton } from "@/components/buttons/refresh-security-data-button";
+import { BackfillButton } from "@/components/buttons/backfill-button";
+import { CheckCircle2, Link2, Database, Calculator, History } from "lucide-react";
 import { prisma } from "@/lib/prisma";
+import { getTaxSettings } from "@/server/actions/tax-settings";
+import { TaxSettingsForm } from "@/components/settings/tax-settings-form";
 
 export const dynamic = "force-dynamic";
 
@@ -39,12 +43,14 @@ export default async function SettingsPage({
   const sp = await searchParams;
   const justConnected = sp.connected === "true";
 
-  const [latestSync, syncHistory, connections, quoteCacheCount, enrichedSecurities] = await Promise.all([
+  const [latestSync, syncHistory, connections, quoteCacheCount, enrichedSecurities, totalSecurities, taxSettings] = await Promise.all([
     getLatestSync(),
     getSyncHistory(20),
     getSnaptradeConnections(),
     prisma.quoteCache.count(),
     prisma.security.count({ where: { sector: { not: null } } }),
+    prisma.security.count(),
+    getTaxSettings(),
   ]);
 
   const isConnected = connections.length > 0;
@@ -200,11 +206,48 @@ export default async function SettingsPage({
               <p className="text-xl font-bold">15 min</p>
             </div>
           </div>
-          <RefreshQuotesButton />
+          <div className="space-y-3">
+            <RefreshQuotesButton />
+            <RefreshSecurityDataButton />
+          </div>
           <p className="text-xs text-muted-foreground">
             Quotes are cached for 15 minutes. Enrichment (sector, industry,
             country) runs automatically after each sync.
+            {totalSecurities > 0 && (
+              <> {totalSecurities - enrichedSecurities} of {totalSecurities} securities still need classification.</>
+            )}
           </p>
+        </CardContent>
+      </Card>
+
+      {/* Historical Backfill */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <History className="h-5 w-5" />
+            Historical Data Backfill
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <p className="text-sm text-muted-foreground">
+            Fetch historical portfolio values from SnapTrade to populate
+            performance charts. This pulls daily equity snapshots from your
+            earliest recorded activity to today.
+          </p>
+          <BackfillButton />
+        </CardContent>
+      </Card>
+
+      {/* Tax Configuration */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Calculator className="h-5 w-5" />
+            Tax Configuration
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <TaxSettingsForm settings={taxSettings} />
         </CardContent>
       </Card>
 

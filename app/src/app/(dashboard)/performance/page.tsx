@@ -16,11 +16,12 @@ import { BenchmarkChart } from "@/components/charts/benchmark-chart";
 import { getAccounts, getPortfolioSummary } from "@/server/actions/accounts";
 import { getPortfolioSnapshots } from "@/server/actions/snapshots";
 import { getPortfolioVsBenchmarks } from "@/server/actions/benchmarks";
+import { getPortfolioReturnRates } from "@/server/actions/return-rates";
 import { calculateCumulativeReturns } from "@/lib/calculations";
 import { formatCurrency, formatPercent, toNumber } from "@/lib/formatters";
 import { ACCOUNT_TYPE_LABELS } from "@/lib/constants";
 import { TrendingUp, DollarSign, ArrowDownToLine } from "lucide-react";
-import type { DateRange } from "@/types";
+import type { DateRange, ReturnTimeframe } from "@/types";
 import { cn } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -30,19 +31,33 @@ const DATE_RANGES: DateRange[] = ["1M", "3M", "6M", "YTD", "1Y", "ALL"];
 export default async function PerformancePage({
   searchParams,
 }: {
-  searchParams: Promise<{ range?: string }>;
+  searchParams: Promise<{ range?: string; view?: string }>;
 }) {
   const sp = await searchParams;
   const range = (DATE_RANGES.includes(sp.range as DateRange)
     ? sp.range
     : "1Y") as DateRange;
+  const filter = (sp.view as "all" | "personal" | "corporate") || undefined;
 
-  const [summary, accounts, snapshots, benchmarkData] = await Promise.all([
-    getPortfolioSummary(),
-    getAccounts(),
-    getPortfolioSnapshots(range),
+  const [summary, accounts, snapshots, benchmarkData, returnRates] = await Promise.all([
+    getPortfolioSummary(filter),
+    getAccounts(false, filter),
+    getPortfolioSnapshots(range, filter),
     getPortfolioVsBenchmarks(range),
+    getPortfolioReturnRates(),
   ]);
+
+  // Map date range to return rate timeframe
+  const rangeToTimeframe: Record<string, ReturnTimeframe> = {
+    "1M": "1M",
+    "3M": "3M",
+    "6M": "6M",
+    "YTD": "1Y",
+    "1Y": "1Y",
+    ALL: "ALL",
+  };
+  const activeTimeframe = rangeToTimeframe[range] ?? "ALL";
+  const realReturnPct = returnRates.rates[activeTimeframe];
 
   const cumulativeReturns = calculateCumulativeReturns(snapshots);
 
@@ -73,9 +88,11 @@ export default async function PerformancePage({
         <KpiCard
           title="Portfolio Return"
           value={
-            latestBenchmark
-              ? formatPercent(latestBenchmark.portfolioReturn)
-              : formatPercent(summary.totalGainLossPct)
+            realReturnPct !== 0
+              ? formatPercent(realReturnPct)
+              : latestBenchmark
+                ? formatPercent(latestBenchmark.portfolioReturn)
+                : formatPercent(summary.totalGainLossPct)
           }
           change={formatCurrency(summary.totalGainLoss)}
           changeType={summary.totalGainLoss >= 0 ? "positive" : "negative"}
@@ -148,8 +165,13 @@ export default async function PerformancePage({
                   const withdrawals = toNumber(account.totalWithdrawals);
                   const gainLoss = nlv - deposits + withdrawals;
                   const netContributions = deposits - withdrawals;
-                  const returnPct =
-                    netContributions > 0
+                  // Use real return rate from SnapTrade if available
+                  const acctRateData = returnRates.perAccount.find(
+                    (r) => r.accountId === account.id
+                  );
+                  const returnPct = acctRateData
+                    ? acctRateData.rates[activeTimeframe]
+                    : netContributions > 0
                       ? (gainLoss / netContributions) * 100
                       : 0;
 

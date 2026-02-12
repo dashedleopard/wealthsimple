@@ -22,6 +22,7 @@ model Account {
   snapshots       AccountSnapshot[]
   activities      Activity[]
   dividends       Dividend[]
+  returnRates     AccountReturnRate[]
 
   @@map("accounts")
 }
@@ -170,4 +171,109 @@ model SyncLog {
   createdAt       DateTime @default(now())
 
   @@map("sync_logs")
+}
+
+model TaxSettings {
+  id                  String   @id @default("default")
+  province            String   @default("QC")
+  personalMarginalRate Decimal @default(0.5331) @db.Decimal(6, 4)
+  openingCdaBalance   Decimal  @default(0) @db.Decimal(14, 2)
+  cdaAsOfDate         DateTime @default(now()) @db.Date
+  openingRdtohBalance Decimal  @default(0) @db.Decimal(14, 2)
+  rdtohAsOfDate       DateTime @default(now()) @db.Date
+  taxYear             Int      @default(2025)
+  updatedAt           DateTime @updatedAt
+  createdAt           DateTime @default(now())
+
+  @@map("tax_settings")
+}
+
+// ─── Phase 1B: Return Rates ──────────────────────────────────────────────────
+
+model AccountReturnRate {
+  id        String   @id @default(cuid())
+  accountId String
+  account   Account  @relation(fields: [accountId], references: [id])
+  timeframe String   // ALL, 1Y, 6M, 3M, 1M
+  returnPct Decimal  @db.Decimal(10, 4)
+  fetchedAt DateTime @default(now())
+
+  @@unique([accountId, timeframe])
+  @@map("account_return_rates")
+}
+
+// ─── Phase 1D: FX Rate Cache ─────────────────────────────────────────────────
+
+model FXRateCache {
+  pair      String   @id // "USD/CAD"
+  rate      Decimal  @db.Decimal(10, 6)
+  fetchedAt DateTime @default(now())
+
+  @@map("fx_rate_cache")
+}
+
+// ─── Phase 2A: Alerts ────────────────────────────────────────────────────────
+
+model Alert {
+  id          String    @id @default(cuid())
+  type        String    // aaii_threshold, tlh_window, concentration_risk, market_move, rebalance_drift, goal_milestone
+  severity    String    @default("info") // info, warning, critical
+  title       String
+  description String
+  actionUrl   String?
+  data        Json?
+  read        Boolean   @default(false)
+  dismissed   Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+  expiresAt   DateTime?
+
+  @@index([read, createdAt])
+  @@map("alerts")
+}
+
+// ─── Phase 3B: Tax Memos ─────────────────────────────────────────────────────
+
+model TaxMemo {
+  id          String   @id @default(cuid())
+  quarter     String   @unique // "2025-Q1"
+  year        Int
+  content     String   @db.Text
+  data        Json
+  generatedAt DateTime @default(now())
+
+  @@map("tax_memos")
+}
+
+// ─── Phase 4A: Financial Goals ───────────────────────────────────────────────
+
+model FinancialGoal {
+  id                  String   @id @default(cuid())
+  name                String
+  targetAmount        Decimal  @db.Decimal(14, 2)
+  currentAmount       Decimal  @default(0) @db.Decimal(14, 2)
+  targetDate          DateTime @db.Date
+  accountIds          String[]
+  priority            Int      @default(1)
+  category            String   // retirement, education, house, emergency, custom
+  monthlyContribution Decimal  @default(0) @db.Decimal(14, 2)
+  notes               String?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@map("financial_goals")
+}
+
+// ─── Phase 4B: Target Allocations ────────────────────────────────────────────
+
+model TargetAllocation {
+  id         String   @id @default(cuid())
+  name       String
+  assetClass String   @unique
+  targetPct  Decimal  @db.Decimal(6, 2)
+  minPct     Decimal  @db.Decimal(6, 2)
+  maxPct     Decimal  @db.Decimal(6, 2)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@map("target_allocations")
 }
