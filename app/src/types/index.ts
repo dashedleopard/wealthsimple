@@ -337,6 +337,10 @@ export interface EnhancedTLHCandidate {
   marketValue: number;
   estimatedTaxSavings: number;
   corporateTaxSavings?: number;
+  lastBuyDate?: Date;
+  daysSinceLastBuy?: number;
+  daysUntilSafe?: number;
+  harvestStatus: "safe" | "approaching" | "risky";
   replacements: TLHReplacementSuggestion[];
   portfolioImpact: TLHPortfolioImpact;
 }
@@ -495,6 +499,34 @@ export interface GoalProjection {
     p90: number;
   };
   projectionCurve: { month: number; p10: number; p50: number; p90: number }[];
+}
+
+// ─── Action Items ───────────────────────────────────────────────────────────
+
+export type ActionItemSeverity = "critical" | "warning" | "info";
+
+export interface ActionItem {
+  id: string;
+  severity: ActionItemSeverity;
+  icon: "scissors" | "alert" | "piggybank" | "scale" | "target";
+  title: string;
+  description: string;
+  href: string;
+}
+
+// ─── Weekly Digest ──────────────────────────────────────────────────────────
+
+export interface WeeklyDigest {
+  portfolioChange: number;
+  portfolioChangePct: number;
+  currentValue: number;
+  dividendsReceived: number;
+  dividendCount: number;
+  tlhOpportunities: number;
+  tlhPotentialSavings: number;
+  activeAlerts: number;
+  goalsOnTrack: number;
+  goalsTotal: number;
 }
 
 // ─── Phase 4B: Rebalancing Types ─────────────────────────────────────────────

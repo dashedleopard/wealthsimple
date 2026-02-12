@@ -7,12 +7,18 @@ import type {
   UnrealizedGain,
   TaxLossCandidate,
   CapitalGainsSummary,
+  EnhancedTLHCandidate,
 } from "@/types";
 import {
   TAXABLE_ACCOUNT_TYPES,
   CAPITAL_GAINS_INCLUSION_RATE,
   SUPERFICIAL_LOSS_WINDOW_DAYS,
+  CORPORATE_ACCOUNT_TYPES,
 } from "@/lib/constants";
+import { findReplacements } from "@/lib/etf-replacements";
+import { comparePersonalVsCorporate } from "@/lib/corporate-tax";
+import { computeAllocationDelta } from "./allocation";
+import { getTaxSettings } from "./tax-settings";
 
 /**
  * Get realized gains from sell activities using FIFO matching.
@@ -204,6 +210,193 @@ export async function getTaxLossCandidates(): Promise<TaxLossCandidate[]> {
   }
 
   return candidates.sort((a, b) => b.unrealizedLoss - a.unrealizedLoss);
+}
+
+/**
+ * Enhanced TLH candidates with replacement suggestions, impact analysis, and corporate tax detail.
+ */
+export async function getEnhancedTLHCandidates(): Promise<EnhancedTLHCandidate[]> {
+  const positions = await prisma.position.findMany({
+    include: { account: true, security: true },
+  });
+
+  // Group by symbol
+  const symbolMap = new Map<
+    string,
+    {
+      name: string;
+      totalBookValue: number;
+      totalMarketValue: number;
+      accounts: Set<string>;
+      accountTypes: Set<string>;
+      sector?: string;
+      assetClass?: string;
+    }
+  >();
+
+  for (const pos of positions) {
+    const bv = toNumber(pos.bookValue);
+    const mv = toNumber(pos.marketValue);
+    const existing = symbolMap.get(pos.symbol);
+
+    if (existing) {
+      existing.totalBookValue += bv;
+      existing.totalMarketValue += mv;
+      existing.accounts.add(pos.account.nickname ?? pos.account.type);
+      existing.accountTypes.add(pos.account.type);
+    } else {
+      symbolMap.set(pos.symbol, {
+        name: pos.name,
+        totalBookValue: bv,
+        totalMarketValue: mv,
+        accounts: new Set([pos.account.nickname ?? pos.account.type]),
+        accountTypes: new Set([pos.account.type]),
+        sector: pos.security?.sector ?? undefined,
+        assetClass: pos.security?.assetClass ?? undefined,
+      });
+    }
+  }
+
+  const candidates: EnhancedTLHCandidate[] = [];
+
+  for (const [symbol, data] of symbolMap) {
+    const unrealizedLoss = data.totalMarketValue - data.totalBookValue;
+    if (unrealizedLoss >= 0) continue; // Only losses
+
+    const accountTypes = Array.from(data.accountTypes);
+    const hasCorporate = accountTypes.some((t) => CORPORATE_ACCOUNT_TYPES.includes(t));
+    const hasTaxable = accountTypes.some((t) => TAXABLE_ACCOUNT_TYPES.includes(t));
+
+    // Only show if at least one taxable account holds it
+    if (!hasTaxable) continue;
+
+    // Check superficial loss risk and compute timing
+    const recentBuys = await prisma.activity.findMany({
+      where: {
+        type: "buy",
+        symbol,
+        occurredAt: {
+          gte: new Date(Date.now() - SUPERFICIAL_LOSS_WINDOW_DAYS * 24 * 60 * 60 * 1000),
+        },
+      },
+      orderBy: { occurredAt: "desc" },
+    });
+
+    let lastBuyDate: Date | undefined;
+    let daysSinceLastBuy: number | undefined;
+    let daysUntilSafe: number | undefined;
+    let harvestStatus: "safe" | "approaching" | "risky" = "safe";
+
+    if (recentBuys.length > 0) {
+      lastBuyDate = recentBuys[0].occurredAt;
+      daysSinceLastBuy = Math.floor(
+        (Date.now() - lastBuyDate.getTime()) / (1000 * 60 * 60 * 24)
+      );
+      daysUntilSafe = Math.max(0, SUPERFICIAL_LOSS_WINDOW_DAYS - daysSinceLastBuy);
+
+      if (daysSinceLastBuy < 20) harvestStatus = "risky";
+      else if (daysSinceLastBuy < 30) harvestStatus = "approaching";
+      else harvestStatus = "safe";
+    }
+
+    // Find replacement suggestions
+    const replacements = findReplacements(symbol, data.sector, data.assetClass).map((r) => ({
+      ...r,
+    }));
+
+    // Estimate tax savings (personal: 50% inclusion at ~50% marginal)
+    const loss = Math.abs(unrealizedLoss);
+    const estimatedTaxSavings = loss * CAPITAL_GAINS_INCLUSION_RATE * 0.5;
+
+    // Corporate tax comparison (province-aware)
+    let corporateTaxSavings: number | undefined;
+    if (hasCorporate) {
+      const settings = await getTaxSettings();
+      const corpDetail = comparePersonalVsCorporate(
+        loss,
+        settings.province,
+        settings.personalMarginalRate
+      );
+      corporateTaxSavings = corpDetail.netTax;
+    }
+
+    // Compute allocation impact
+    const impact = await computeAllocationDelta(symbol);
+
+    candidates.push({
+      symbol,
+      name: data.name,
+      unrealizedLoss: loss,
+      lossPct: data.totalBookValue > 0 ? (unrealizedLoss / data.totalBookValue) * 100 : 0,
+      accounts: Array.from(data.accounts),
+      accountTypes,
+      superficialLossRisk: recentBuys.length > 0,
+      bookValue: data.totalBookValue,
+      marketValue: data.totalMarketValue,
+      estimatedTaxSavings,
+      corporateTaxSavings,
+      lastBuyDate,
+      daysSinceLastBuy,
+      daysUntilSafe,
+      harvestStatus,
+      replacements,
+      portfolioImpact: {
+        allocationBefore: impact.before,
+        allocationAfter: impact.after,
+        dividendIncomeChange: impact.dividendChange,
+      },
+    });
+  }
+
+  return candidates.sort((a, b) => b.unrealizedLoss - a.unrealizedLoss);
+}
+
+/**
+ * Capital gains summary split by personal vs corporate.
+ */
+export async function getCapitalGainsSummarySplit(year?: number) {
+  const gains = await getRealizedGains(year);
+
+  let personalGains = 0;
+  let personalLosses = 0;
+  let corporateGains = 0;
+  let corporateLosses = 0;
+
+  for (const g of gains) {
+    if (!g.isTaxable) continue;
+    const isCorp = CORPORATE_ACCOUNT_TYPES.includes(g.accountType);
+
+    if (g.gainLoss > 0) {
+      if (isCorp) corporateGains += g.gainLoss;
+      else personalGains += g.gainLoss;
+    } else {
+      if (isCorp) corporateLosses += Math.abs(g.gainLoss);
+      else personalLosses += Math.abs(g.gainLoss);
+    }
+  }
+
+  // SBD impact from passive income
+  const corporatePassiveIncome = (corporateGains - corporateLosses) * CAPITAL_GAINS_INCLUSION_RATE;
+  let sbdReduction = 0;
+  if (corporatePassiveIncome > 50_000) {
+    sbdReduction = Math.min(500_000, (corporatePassiveIncome - 50_000) * 5);
+  }
+
+  return {
+    personal: {
+      gains: personalGains,
+      losses: personalLosses,
+      net: personalGains - personalLosses,
+      taxable: Math.max(0, personalGains - personalLosses) * CAPITAL_GAINS_INCLUSION_RATE,
+    },
+    corporate: {
+      gains: corporateGains,
+      losses: corporateLosses,
+      net: corporateGains - corporateLosses,
+      taxable: Math.max(0, corporateGains - corporateLosses) * CAPITAL_GAINS_INCLUSION_RATE,
+      sbdReduction,
+    },
+  };
 }
 
 /**

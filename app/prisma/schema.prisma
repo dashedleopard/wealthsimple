@@ -265,6 +265,18 @@ model FinancialGoal {
 
 // ─── Phase 4B: Target Allocations ────────────────────────────────────────────
 
+model ChecklistOverride {
+  id        String   @id @default(cuid())
+  itemId    String
+  taxYear   Int
+  completed Boolean  @default(true)
+  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
+
+  @@unique([itemId, taxYear])
+  @@map("checklist_overrides")
+}
+
 model TargetAllocation {
   id         String   @id @default(cuid())
   name       String

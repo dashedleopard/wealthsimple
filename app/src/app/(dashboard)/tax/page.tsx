@@ -12,11 +12,17 @@ import {
 import { KpiCard } from "@/components/cards/kpi-card";
 import { SuperficialLossWarning } from "@/components/cards/superficial-loss-warning";
 import { ContributionRoomDialog } from "@/components/dialogs/contribution-room-dialog";
+import { TLHCandidatesClient } from "@/components/tax/tlh-candidates-client";
+import { TLHUrgencyBanner } from "@/components/tax/tlh-urgency-banner";
+import { ExportButton } from "@/components/buttons/export-button";
+import { TaxChecklist } from "@/components/tax/tax-checklist";
+import { getTaxChecklist } from "@/server/actions/checklist";
 import {
   getRealizedGains,
   getUnrealizedGains,
-  getTaxLossCandidates,
   getCapitalGainsSummary,
+  getEnhancedTLHCandidates,
+  getCapitalGainsSummarySplit,
 } from "@/server/actions/tax";
 import { getContributionSummary } from "@/server/actions/contribution-room";
 import { formatCurrency, formatPercent, formatDate } from "@/lib/formatters";
@@ -26,6 +32,7 @@ import {
   TrendingDown,
   Calculator,
   AlertTriangle,
+  Building2,
 } from "lucide-react";
 
 export const dynamic = "force-dynamic";
@@ -36,25 +43,37 @@ export default async function TaxPage() {
   const [
     realizedGains,
     unrealizedGains,
-    tlhCandidates,
     summary,
+    enhancedTLH,
+    gainsSplit,
     contributionRooms,
+    checklistItems,
   ] = await Promise.all([
     getRealizedGains(currentYear),
     getUnrealizedGains(),
-    getTaxLossCandidates(),
     getCapitalGainsSummary(currentYear),
+    getEnhancedTLHCandidates(),
+    getCapitalGainsSummarySplit(currentYear),
     getContributionSummary(currentYear),
+    getTaxChecklist(currentYear),
   ]);
+
+  const hasCorporate = gainsSplit.corporate.gains > 0 || gainsSplit.corporate.losses > 0;
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold">Tax &amp; Capital Gains</h1>
-        <p className="text-muted-foreground">
-          {currentYear} tax year analysis
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold">Tax &amp; Capital Gains</h1>
+          <p className="text-muted-foreground">
+            {currentYear} tax year analysis
+          </p>
+        </div>
+        <ExportButton year={currentYear} />
       </div>
+
+      {/* Year-End Tax Checklist */}
+      <TaxChecklist items={checklistItems} year={currentYear} />
 
       {/* KPI Cards */}
       <div className="grid gap-4 sm:grid-cols-4">
@@ -83,6 +102,56 @@ export default async function TaxPage() {
           icon={Calculator}
         />
       </div>
+
+      {/* Corporate KPI Cards */}
+      {hasCorporate && (
+        <div className="grid gap-4 sm:grid-cols-3">
+          <Card className="border-blue-200 dark:border-blue-900">
+            <CardHeader className="pb-2">
+              <CardTitle className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                <Building2 className="h-4 w-4" />
+                Corporate Gains
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-xl font-bold text-blue-600 dark:text-blue-400">
+                {formatCurrency(gainsSplit.corporate.gains)}
+              </div>
+            </CardContent>
+          </Card>
+          <Card className="border-blue-200 dark:border-blue-900">
+            <CardHeader className="pb-2">
+              <CardTitle className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                <Building2 className="h-4 w-4" />
+                Corporate Net
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className={`text-xl font-bold ${gainsSplit.corporate.net >= 0 ? "text-blue-600 dark:text-blue-400" : "text-red-600 dark:text-red-400"}`}>
+                {formatCurrency(gainsSplit.corporate.net)}
+              </div>
+            </CardContent>
+          </Card>
+          {gainsSplit.corporate.sbdReduction > 0 && (
+            <Card className="border-amber-200 dark:border-amber-900">
+              <CardHeader className="pb-2">
+                <CardTitle className="flex items-center gap-2 text-sm font-medium text-amber-700 dark:text-amber-300">
+                  <AlertTriangle className="h-4 w-4" />
+                  SBD Clawback
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-xl font-bold text-amber-600">
+                  {formatCurrency(gainsSplit.corporate.sbdReduction)}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Lost SBD room from passive income
+                </p>
+              </CardContent>
+            </Card>
+          )}
+        </div>
+      )}
 
       <Tabs defaultValue="capital-gains">
         <TabsList className="grid w-full grid-cols-3">
@@ -228,75 +297,17 @@ export default async function TaxPage() {
 
         {/* Tab 2: Tax-Loss Harvesting */}
         <TabsContent value="tax-loss" className="mt-4 space-y-6">
+          <TLHUrgencyBanner />
           <SuperficialLossWarning />
 
           <Card>
             <CardHeader>
               <CardTitle>
-                TLH Candidates ({tlhCandidates.length})
+                TLH Candidates ({enhancedTLH.length})
               </CardTitle>
             </CardHeader>
             <CardContent>
-              {tlhCandidates.length === 0 ? (
-                <p className="py-8 text-center text-muted-foreground">
-                  No tax-loss harvesting candidates found. All positions are in
-                  gain.
-                </p>
-              ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Symbol</TableHead>
-                      <TableHead>Name</TableHead>
-                      <TableHead className="text-right">
-                        Unrealized Loss
-                      </TableHead>
-                      <TableHead className="text-right">Loss %</TableHead>
-                      <TableHead>Accounts</TableHead>
-                      <TableHead>Risk</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {tlhCandidates.map((c) => (
-                      <TableRow key={c.symbol}>
-                        <TableCell className="font-medium">
-                          {c.symbol}
-                        </TableCell>
-                        <TableCell className="max-w-[200px] truncate text-sm text-muted-foreground">
-                          {c.name}
-                        </TableCell>
-                        <TableCell className="text-right font-medium text-red-600 dark:text-red-400">
-                          {formatCurrency(c.unrealizedLoss)}
-                        </TableCell>
-                        <TableCell className="text-right text-red-600 dark:text-red-400">
-                          {formatPercent(c.lossPct)}
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex flex-wrap gap-1">
-                            {c.accounts.map((a) => (
-                              <Badge
-                                key={a}
-                                variant="outline"
-                                className="text-xs"
-                              >
-                                {ACCOUNT_TYPE_LABELS[a] ?? a}
-                              </Badge>
-                            ))}
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          {c.superficialLossRisk && (
-                            <div className="flex items-center gap-1 text-amber-600">
-                              <AlertTriangle className="h-4 w-4" />
-                              <span className="text-xs">Superficial</span>
-                            </div>
-                          )}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              )}
+              <TLHCandidatesClient candidates={enhancedTLH} />
             </CardContent>
           </Card>
         </TabsContent>
