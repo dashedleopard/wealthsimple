@@ -18,6 +18,10 @@ import {
   getSymbolDividendHistory,
   getSymbolPriceHistory,
 } from "@/server/actions/symbol-detail";
+import { getACBHistory, getTaxImplications } from "@/server/actions/acb-history";
+import { ACBLotTable } from "@/components/holdings/acb-lot-table";
+import { TaxImplicationsCard } from "@/components/holdings/tax-implications-card";
+import { AiOpinionCard } from "@/components/holdings/ai-opinion-card";
 import {
   formatCurrency,
   formatPercent,
@@ -44,11 +48,13 @@ export default async function SymbolDetailPage({
   const { symbol } = await params;
   const decodedSymbol = decodeURIComponent(symbol);
 
-  const [detail, transactions, dividendData, priceHistory] = await Promise.all([
+  const [detail, transactions, dividendData, priceHistory, acbHistory, taxImplications] = await Promise.all([
     getSymbolDetail(decodedSymbol),
     getSymbolTransactions(decodedSymbol),
     getSymbolDividendHistory(decodedSymbol),
     getSymbolPriceHistory(decodedSymbol),
+    getACBHistory(decodedSymbol),
+    getTaxImplications(decodedSymbol),
   ]);
 
   if (!detail) {
@@ -279,6 +285,15 @@ export default async function SymbolDetailPage({
           </Table>
         </CardContent>
       </Card>
+
+      {/* ACB Lot History */}
+      <ACBLotTable results={acbHistory} />
+
+      {/* Tax Implications */}
+      <TaxImplicationsCard implications={taxImplications} />
+
+      {/* AI Analysis */}
+      <AiOpinionCard symbol={detail.symbol} name={sec.name} />
 
       {/* Dividend Section */}
       {dividendData.history.length > 0 && (

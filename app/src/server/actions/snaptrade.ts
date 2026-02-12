@@ -4,6 +4,11 @@ import { prisma } from "@/lib/prisma";
 import { getSnaptradeClient } from "@/lib/snaptrade";
 import { revalidatePath } from "next/cache";
 import { enrichSecurities } from "./securities";
+import { computeACB } from "@/lib/acb-engine";
+import { toNumber } from "@/lib/formatters";
+import { syncReturnRates, syncPerformanceData } from "./snaptrade-performance";
+import { backfillHistoricalSnapshots } from "./backfill";
+import { generateAlerts } from "./alerts";
 
 const SNAPTRADE_USER_ID = "wealthview-default-user";
 
@@ -130,6 +135,7 @@ function normalizeAccountType(name: string | null | undefined, rawType: string |
   if (combined.includes("lira")) return "LIRA";
   if (combined.includes("crypto")) return "CRYPTO";
   if (combined.includes("usd") || combined.includes("us ")) return "USD";
+  if (combined.includes("corporate") || combined.includes("ccpc") || combined.includes("corp")) return "CORPORATE";
   return "NON_REG";
 }
 
@@ -271,6 +277,53 @@ export async function syncFromSnaptrade() {
         console.error(`Failed to fetch positions for ${accountId}:`, e);
       }
 
+      // 2.5 Fix positions with zero book value using ACB from activities
+      try {
+        const zeroCostPositions = await prisma.position.findMany({
+          where: { accountId, bookValue: 0, quantity: { gt: 0 } },
+        });
+
+        if (zeroCostPositions.length > 0) {
+          const accountActivities = await prisma.activity.findMany({
+            where: { accountId, type: { in: ["buy", "sell", "transfer"] } },
+            orderBy: { occurredAt: "asc" },
+          });
+
+          for (const pos of zeroCostPositions) {
+            const acb = computeACB(
+              accountActivities.map((a) => ({
+                type: a.type,
+                symbol: a.symbol,
+                quantity: a.quantity ? toNumber(a.quantity) : null,
+                price: a.price ? toNumber(a.price) : null,
+                amount: toNumber(a.amount),
+                occurredAt: a.occurredAt,
+                accountId: a.accountId,
+              })),
+              pos.symbol,
+              accountId
+            );
+
+            if (acb.totalACB > 0) {
+              const mv = toNumber(pos.marketValue);
+              const gainLoss = mv - acb.totalACB;
+              const gainLossPct = acb.totalACB > 0 ? (gainLoss / acb.totalACB) * 100 : 0;
+
+              await prisma.position.update({
+                where: { id: pos.id },
+                data: {
+                  bookValue: acb.totalACB,
+                  gainLoss,
+                  gainLossPct,
+                },
+              });
+            }
+          }
+        }
+      } catch (e) {
+        console.error(`ACB fix failed for ${accountId}:`, e);
+      }
+
       // 3. Fetch activities for this account
       try {
         const { data: activitiesResponse } =
@@ -390,6 +443,41 @@ export async function syncFromSnaptrade() {
       await enrichSecurities();
     } catch (e) {
       console.error("Security enrichment failed (non-fatal):", e);
+    }
+
+    // 5. Sync return rates for each account
+    try {
+      for (const stAccount of stAccounts ?? []) {
+        const accountId = stAccount.id!;
+        await syncReturnRates(user.snaptradeUserId, user.userSecret, accountId);
+      }
+    } catch (e) {
+      console.error("Return rate sync failed (non-fatal):", e);
+    }
+
+    // 6. Sync performance data (deposits, withdrawals, equity timeline)
+    // On first sync (no existing snapshots beyond today), trigger full backfill
+    try {
+      const existingSnapshots = await prisma.accountSnapshot.count();
+      if (existingSnapshots <= (stAccounts?.length ?? 0)) {
+        // Only today's snapshots exist — trigger full backfill
+        await backfillHistoricalSnapshots();
+      } else {
+        // Incremental sync
+        for (const stAccount of stAccounts ?? []) {
+          const accountId = stAccount.id!;
+          await syncPerformanceData(user.snaptradeUserId, user.userSecret, accountId);
+        }
+      }
+    } catch (e) {
+      console.error("Performance data sync failed (non-fatal):", e);
+    }
+
+    // 7. Generate alerts based on current portfolio state
+    try {
+      await generateAlerts();
+    } catch (e) {
+      console.error("Alert generation failed (non-fatal):", e);
     }
 
     revalidatePath("/");

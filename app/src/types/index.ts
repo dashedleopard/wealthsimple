@@ -178,3 +178,348 @@ export interface CapitalGainsSummary {
   netCapitalGains: number;
   taxableAmount: number; // 50% inclusion rate
 }
+
+// ─── Province & Tax Settings ────────────────────────────────────────────────
+
+export type Province = "QC" | "ON" | "BC" | "AB";
+
+export interface TaxSettings {
+  province: Province;
+  personalMarginalRate: number;
+  openingCdaBalance: number;
+  cdaAsOfDate: Date;
+  openingRdtohBalance: number;
+  rdtohAsOfDate: Date;
+  taxYear: number;
+}
+
+export interface ProvincialCCPCRates {
+  passiveIncomeRate: number;
+  sbdRate: number;
+  generalCorporateRate: number;
+  rdtohRefundRate: number;
+  eligibleDividendGrossUp: number;
+  eligibleDividendTaxCredit: number;
+  ineligibleDividendGrossUp: number;
+  ineligibleDividendTaxCredit: number;
+}
+
+// ─── CDA / RDTOH / Passive Income ──────────────────────────────────────────
+
+export interface CDAEntry {
+  date: Date;
+  description: string;
+  amount: number;
+  balance: number;
+  source: "manual" | "realized_gain" | "realized_loss";
+}
+
+export interface RDTOHEntry {
+  date: Date;
+  description: string;
+  amount: number;
+  balance: number;
+  source: "manual" | "part_iv_tax" | "part_i_refundable";
+}
+
+export interface CDATrackerData {
+  openingBalance: number;
+  asOfDate: Date;
+  entries: CDAEntry[];
+  currentBalance: number;
+  availableForCapitalDividend: number;
+}
+
+export interface RDTOHTrackerData {
+  openingBalance: number;
+  asOfDate: Date;
+  entries: RDTOHEntry[];
+  currentBalance: number;
+  estimatedRefundOnDividend: number;
+}
+
+export interface PassiveIncomeSummary {
+  realizedCapitalGainsInclusion: number;
+  dividendIncome: number;
+  totalAAII: number;
+  threshold: number;
+  isOverThreshold: boolean;
+  sbdReduction: number;
+  ytdProgress: number;
+}
+
+// ─── Phase 1: Extended Types ─────────────────────────────────────────────────
+
+/** Merged position with per-account breakdown and enrichment data */
+export interface PositionWithAccountDetail {
+  symbol: string;
+  name: string;
+  totalQuantity: number;
+  totalBookValue: number;
+  totalMarketValue: number;
+  totalGainLoss: number;
+  gainLossPct: number;
+  weight: number;
+  accounts: string[];
+  currentPrice?: number;
+  priceUpdatedAt?: Date;
+  sector?: string;
+  assetClass?: string;
+  perAccountBreakdown: PerAccountPosition[];
+}
+
+export interface PerAccountPosition {
+  accountId: string;
+  accountName: string;
+  accountType: string;
+  quantity: number;
+  bookValue: number;
+  marketValue: number;
+  gainLoss: number;
+  weight: number;
+}
+
+/** Account-level dividend aggregation */
+export interface DividendByAccount {
+  accountId: string;
+  accountName: string;
+  accountType: string;
+  isCorporate: boolean;
+  total: number;
+  count: number;
+  symbols: string[];
+}
+
+/** Dividend by symbol with per-account sub-breakdown */
+export interface DividendBySymbolDetailed {
+  symbol: string;
+  total: number;
+  count: number;
+  lastPayment: Date;
+  byAccount: {
+    accountId: string;
+    accountName: string;
+    accountType: string;
+    total: number;
+    count: number;
+  }[];
+}
+
+/** Filter state for holdings page */
+export interface HoldingsFilterState {
+  search: string;
+  accountTypes: string[];
+  sectors: string[];
+  assetClasses: string[];
+  gainLossFilter: "all" | "winners" | "losers";
+  sortField: string;
+  sortDirection: "asc" | "desc";
+}
+
+/** Sort state generic */
+export interface SortState<T extends string = string> {
+  field: T;
+  direction: "asc" | "desc";
+}
+
+// ─── Phase 6: TLH + Corporate Types ────────────────────────────────────────
+
+/** Enhanced TLH candidate with replacement suggestions */
+export interface EnhancedTLHCandidate {
+  symbol: string;
+  name: string;
+  unrealizedLoss: number;
+  lossPct: number;
+  accounts: string[];
+  accountTypes: string[];
+  superficialLossRisk: boolean;
+  bookValue: number;
+  marketValue: number;
+  estimatedTaxSavings: number;
+  corporateTaxSavings?: number;
+  replacements: TLHReplacementSuggestion[];
+  portfolioImpact: TLHPortfolioImpact;
+}
+
+/** ETF replacement suggestion for TLH */
+export interface TLHReplacementSuggestion {
+  symbol: string;
+  name: string;
+  sector: string;
+  assetClass: string;
+  mer?: number;
+  dividendYield?: number;
+  rationale: string;
+}
+
+/** Impact on portfolio if TLH candidate is sold */
+export interface TLHPortfolioImpact {
+  allocationBefore: AllocationSlice[];
+  allocationAfter: AllocationSlice[];
+  dividendIncomeChange: number;
+}
+
+/** CCPC corporate tax detail */
+export interface CorporateTaxDetail {
+  capitalGain: number;
+  passiveIncomeRate: number;
+  taxOnGain: number;
+  rdtohRefund: number;
+  netTax: number;
+  sbdReduction: number;
+  personalComparison: {
+    marginalRate: number;
+    taxOnGain: number;
+    difference: number;
+  };
+}
+
+// ─── Phase 1A: ACB Engine Types ──────────────────────────────────────────────
+
+export interface ACBEntry {
+  date: Date;
+  type: "buy" | "sell" | "stock_dividend" | "split" | "transfer_in" | "transfer_out";
+  quantity: number;
+  pricePerUnit: number;
+  totalCost: number;
+  runningQuantity: number;
+  runningACB: number;
+  acbPerUnit: number;
+}
+
+export interface ACBResult {
+  symbol: string;
+  accountId: string;
+  currentQuantity: number;
+  totalACB: number;
+  acbPerUnit: number;
+  entries: ACBEntry[];
+}
+
+// ─── Phase 1B: Return Rate Types ─────────────────────────────────────────────
+
+export type ReturnTimeframe = "ALL" | "1Y" | "6M" | "3M" | "1M";
+
+export interface AccountReturnRateData {
+  accountId: string;
+  accountName: string;
+  accountType: string;
+  rates: Record<ReturnTimeframe, number>;
+}
+
+export interface PortfolioReturnRates {
+  rates: Record<ReturnTimeframe, number>;
+  perAccount: AccountReturnRateData[];
+}
+
+// ─── Phase 1D: Multi-Currency Types ──────────────────────────────────────────
+
+export type DisplayCurrency = "CAD" | "USD" | "NATIVE";
+
+export interface ConsolidatedPosition extends MergedPosition {
+  displayMarketValue: number;
+  displayBookValue: number;
+  fxRate: number;
+  fxGainLoss: number;
+  nativeCurrency: string;
+}
+
+// ─── Phase 2A: Alert Types ───────────────────────────────────────────────────
+
+export type AlertType =
+  | "aaii_threshold"
+  | "tlh_window"
+  | "concentration_risk"
+  | "market_move"
+  | "rebalance_drift"
+  | "goal_milestone";
+
+export type AlertSeverity = "info" | "warning" | "critical";
+
+export interface AlertData {
+  id: string;
+  type: AlertType;
+  severity: AlertSeverity;
+  title: string;
+  description: string;
+  actionUrl?: string;
+  data?: Record<string, unknown>;
+  read: boolean;
+  dismissed: boolean;
+  createdAt: Date;
+  expiresAt?: Date;
+}
+
+// ─── Phase 3A: What-If Scenario Types ────────────────────────────────────────
+
+export interface WhatIfScenario {
+  symbol: string;
+  accountId: string;
+  accountType: string;
+  quantity: number;
+  estimatedProceeds: number;
+}
+
+export interface WhatIfResult {
+  proceeds: number;
+  costBasis: number;
+  capitalGain: number;
+  taxableGain: number;
+  estimatedTax: number;
+  cdaImpact: number;
+  aaiImpact: number;
+  rdtohImpact: number;
+  sbdImpact: number;
+  netAfterTax: number;
+  effectiveRate: number;
+  personalAlternative: {
+    estimatedTax: number;
+    netAfterTax: number;
+    effectiveRate: number;
+    difference: number;
+  };
+}
+
+// ─── Phase 4A: Goal Types ────────────────────────────────────────────────────
+
+export interface GoalProjection {
+  progressPct: number;
+  onTrack: boolean;
+  projectedAmount: number;
+  monthlyContributionNeeded: number;
+  percentileOutcomes: {
+    p10: number;
+    p25: number;
+    p50: number;
+    p75: number;
+    p90: number;
+  };
+  projectionCurve: { month: number; p10: number; p50: number; p90: number }[];
+}
+
+// ─── Phase 4B: Rebalancing Types ─────────────────────────────────────────────
+
+export interface RebalanceTrade {
+  symbol: string;
+  accountId: string;
+  accountType: string;
+  action: "buy" | "sell";
+  quantity: number;
+  estimatedValue: number;
+  reason: string;
+  taxImplication: string;
+  priority: number;
+}
+
+export interface RebalanceRecommendation {
+  driftSummary: {
+    assetClass: string;
+    targetPct: number;
+    currentPct: number;
+    driftPct: number;
+    status: "within_band" | "needs_rebalance";
+  }[];
+  trades: RebalanceTrade[];
+  estimatedTaxCost: number;
+  optimizationNotes: string[];
+}
