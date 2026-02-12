@@ -9,6 +9,7 @@ import { toNumber } from "@/lib/formatters";
 import { syncReturnRates, syncPerformanceData } from "./snaptrade-performance";
 import { backfillHistoricalSnapshots } from "./backfill";
 import { generateAlerts } from "./alerts";
+import { applyBookValueOverrides } from "@/lib/book-value-overrides";
 
 const SNAPTRADE_USER_ID = "wealthview-default-user";
 
@@ -437,6 +438,14 @@ export async function syncFromSnaptrade() {
         dividendsCount,
       },
     });
+
+    // Apply WS book value corrections (overrides SnapTrade's wrong cost basis)
+    try {
+      const corrected = await applyBookValueOverrides(prisma);
+      console.log(`Book value overrides applied: ${corrected} positions corrected`);
+    } catch (e) {
+      console.error("Book value override failed (non-fatal):", e);
+    }
 
     // Enrich securities with Yahoo Finance data (runs silently)
     try {
