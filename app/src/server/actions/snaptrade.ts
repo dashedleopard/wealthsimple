@@ -214,32 +214,38 @@ export async function syncFromSnaptrade() {
         await prisma.position.deleteMany({ where: { accountId } });
 
         for (const pos of holdings ?? []) {
-          const symbol = pos.symbol?.symbol ?? pos.symbol?.raw_symbol ?? "UNKNOWN";
-          const name = pos.symbol?.description ?? symbol;
+          // Snaptrade SDK nests: pos.symbol (PositionSymbol) → .symbol (UniversalSymbol) → .symbol (ticker string)
+          const sec = pos.symbol?.symbol as Record<string, unknown> | undefined;
+          const ticker = (sec?.symbol as string) ?? (sec?.raw_symbol as string) ?? "UNKNOWN";
+          const name = (sec?.description as string) ?? ticker;
           const units = pos.units ?? 0;
           const avgPrice = pos.average_purchase_price ?? 0;
           const currentPrice = pos.price ?? avgPrice;
           const bookValue = units * avgPrice;
           const marketValue = units * currentPrice;
           const gainLoss = marketValue - bookValue;
-          const gainLossPct = bookValue > 0 ? (gainLoss / bookValue) * 100 : 0;
+          const gainLossPct = bookValue > 0 ? Math.min(Math.max((gainLoss / bookValue) * 100, -99999999), 99999999) : 0;
+          const secId = sec?.id as string | undefined;
+          const secType = sec?.type as Record<string, unknown> | undefined;
+          const secExchange = sec?.exchange as Record<string, unknown> | undefined;
+          const secCurrency = sec?.currency as Record<string, unknown> | undefined;
 
           // Upsert security
-          if (pos.symbol?.id) {
+          if (secId) {
             await prisma.security.upsert({
-              where: { id: pos.symbol.id },
+              where: { id: secId },
               create: {
-                id: pos.symbol.id,
-                symbol,
+                id: secId,
+                symbol: ticker,
                 name,
-                type: pos.symbol.type?.code?.toLowerCase(),
-                exchange: pos.symbol.exchange?.code,
-                currency: pos.symbol.currency?.code ?? currency,
+                type: (secType?.code as string)?.toLowerCase(),
+                exchange: secExchange?.code as string | undefined,
+                currency: (secCurrency?.code as string) ?? currency,
               },
               update: {
                 name,
-                type: pos.symbol.type?.code?.toLowerCase(),
-                exchange: pos.symbol.exchange?.code,
+                type: (secType?.code as string)?.toLowerCase(),
+                exchange: secExchange?.code as string | undefined,
               },
             });
           }
@@ -247,15 +253,15 @@ export async function syncFromSnaptrade() {
           await prisma.position.create({
             data: {
               accountId,
-              securityId: pos.symbol?.id ?? null,
-              symbol,
+              securityId: secId ?? null,
+              symbol: ticker,
               name,
               quantity: units,
               bookValue,
               marketValue,
               gainLoss,
               gainLossPct,
-              currency: pos.symbol?.currency?.code ?? currency,
+              currency: (secCurrency?.code as string) ?? currency,
             },
           });
 

@@ -38,7 +38,7 @@ model Position {
   bookValue       Decimal  @db.Decimal(14, 2)
   marketValue     Decimal  @db.Decimal(14, 2)
   gainLoss        Decimal  @db.Decimal(14, 2)
-  gainLossPct     Decimal  @db.Decimal(8, 4)
+  gainLossPct     Decimal  @db.Decimal(12, 4)
   currency        String   @default("CAD")
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
